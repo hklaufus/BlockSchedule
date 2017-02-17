@@ -4,6 +4,14 @@ import svgwrite as SVG # pip install svgwrite
 import sys
 
 def CreateBlockSchedule(pFileName, pLevels = None):
+    """
+    Function CreateBlockSchedule is main routine.
+
+    Parameters:
+    pFileName [string]: name of the Microsoft Project XML-file which is to be converted.
+    pLevels [list of integers]: list with task levels that are to be converted.
+    """
+
     vProjectStart, vProjectFinish, vMilestones, vTasks = ReadMSPFile(pFileName, pLevels)
     vTasks = BuildTaskTree(vTasks)
     vTasks, vMaxWidth = BuildBlockSchedule(vProjectStart, vTasks)
@@ -11,6 +19,20 @@ def CreateBlockSchedule(pFileName, pLevels = None):
     WriteSVG(pFileName, vProjectStart, vProjectFinish, vMaxWidth, vMilestones, vTasks)
 
 def ReadMSPFile(pFileName, pLevels = None):
+    """
+    Function ReadMSPFile: Interprets the Microsoft Project XML file and stores it in lists of dictionaries.
+
+    Parameters:
+    pFileName [string]: name of the Microsoft Project XML-file which is to be converted.
+    pLevels [list of integers]: list with task levels that are to be converted.
+
+    Return values:
+    vProjectStart3 [date]: Start date of the project.
+    vProjectFinish3 [date]: Finish date of the project.
+    vMyMilestones [list of dictionaries]: List of milestones.
+    vMyTasks [list of dictionaries]: List of tasks.
+    """
+
     vNameSpaces = "{http://schemas.microsoft.com/project}"
     vMyMilestones = []
     vMyTasks = []
@@ -59,13 +81,15 @@ def ReadMSPFile(pFileName, pLevels = None):
             # print(vTaskName, vTaskStart3, vTaskFinish3)
 
             if(vTaskMilestone == '1'):
+                # Store milestones
                 vMyMilestone = {}
                 vMyMilestone['name'] = vTaskName
                 vMyMilestone['startdate'] = vTaskStart3
 
                 vMyMilestones.append(vMyMilestone)
             else:
-                if((pLevels is None) or (vTaskOutlineLevel in pLevels)):
+                # Store tasks if defined in the list pLevels
+                if((pLevels is None) or (len(pLevels) == 0) or (vTaskOutlineLevel in pLevels)):
                     vMyTask = {}
                     vMyTask['name'] = vTaskName
                     vMyTask['startdate'] = vTaskStart3
@@ -78,11 +102,21 @@ def ReadMSPFile(pFileName, pLevels = None):
     return vProjectStart3, vProjectFinish3, vMyMilestones, vMyTasks
 
 def BuildTaskTree(pTasks):
+    """
+    Function BuildTaskTree: Creates a double-linked task tree.
+
+    Parameters:
+    pTasks [list of dictionaries]: List of tasks.
+
+    Return values:
+    pTasks [list of dictionaries]: Updated list of tasks.
+    """
+
     # Initialise parent pointer, number of children
     for vIdx, vTask in enumerate(pTasks):
         pTasks[vIdx]['parent'] = -1
         pTasks[vIdx]['children'] = []
-        pTasks[vIdx]['numberdecendents'] = 0
+        pTasks[vIdx]['numberdecendants'] = 0
 
     # Map children to parent, parent to children
     for vIdx1, vTask1 in enumerate(pTasks):
@@ -96,12 +130,12 @@ def BuildTaskTree(pTasks):
                     pTasks[vIdx2]['parent'] = vIdx1
                     pTasks[vIdx1]['children'].append(vIdx2)
 
-    # Add total number of decendents
+    # Add total number of decendants
     vList1 = []
     for vIdx, vTask in enumerate(pTasks):
         # Add lowest level decendents to list, i.e. elements with no children.
         if(len(vTask['children'])==0):
-            pTasks[vIdx]['numberdecendents'] = 0
+            pTasks[vIdx]['numberdecendants'] = 0
             vList1.append(vIdx)
 
     # Loop through this list
@@ -112,8 +146,8 @@ def BuildTaskTree(pTasks):
             vIdx2 = pTasks[vIdx1]['parent']
 
             if(vIdx2!=-1):
-                # Add numberdecendents of child to parent's numberdecendents
-                pTasks[vIdx2]['numberdecendents'] = pTasks[vIdx2]['numberdecendents'] + pTasks[vIdx1]['numberdecendents'] + 1
+                # Add numberdecendants of child to parent's numberdecendants
+                pTasks[vIdx2]['numberdecendants'] = pTasks[vIdx2]['numberdecendants'] + pTasks[vIdx1]['numberdecendants'] + 1
 
                 # Add parent to temprary list
                 if(vIdx2 not in vList2):
@@ -124,11 +158,20 @@ def BuildTaskTree(pTasks):
 
     # Debug
     # for vTask in pTasks:
-    #     print(vTask['name'], vTask['numberdecendents'], vTask['children'], vTask['parent'])
+    #     print(vTask['name'], vTask['numberdecendants'], vTask['children'], vTask['parent'])
 
     return pTasks
 
 def SetLeft(pTasks, pIdx, pOffset):
+    """
+    Function SetLeft: Defines the left coordinate of the rectangle.
+
+    Parameters:
+    pTasks [list of dictionaries]: List of tasks.
+    pIdx [integer]: Sequence number of task in list pTasks.
+    pOffset [float]: Whitespace between parent rectangle and the child it contains.
+    """
+
     # print(pTasks[pIdx]['name'])
     vCumulativeLeft = pTasks[pIdx]['left']
 
@@ -137,7 +180,16 @@ def SetLeft(pTasks, pIdx, pOffset):
         SetLeft(pTasks, vChildIdx, pOffset)
         vCumulativeLeft = vCumulativeLeft + pTasks[vChildIdx]['width'] + pOffset
 
-def SetWidthSuccesors(pTasks, pIdx, pOffset):
+def SetWidthDescendants(pTasks, pIdx, pOffset):
+    """
+    Function SetWidthDescendants: Derives the width of children, based on their parent's width.
+
+    Parameters:
+    pTasks [list of dictionaries]: List of tasks.
+    pIdx [integer]: Sequence number of task in list pTasks.
+    pOffset [float]: Whitespace between parent rectangle and the child it contains.
+    """
+
     # print('Level: ' + str(pCurrentLevel) + '; name: ' + pTasks[pIdx]['name'] + '; pIdx = ' + str(pIdx))
     vNumberChildren = len(pTasks[pIdx]['children'])
     if(vNumberChildren>0):
@@ -145,17 +197,38 @@ def SetWidthSuccesors(pTasks, pIdx, pOffset):
 
         for vChildIdx in pTasks[pIdx]['children']:
             pTasks[vChildIdx]['width'] = vChildWidth
-            SetWidthSuccesors(pTasks, vChildIdx, pOffset)
+            SetWidthDescendants(pTasks, vChildIdx, pOffset)
 
-def UpdateWidthPredecessors(pTasks, pIdx, pDeltaWidth):
+def UpdateWidthAncestors(pTasks, pIdx, pDeltaWidth):
+    """
+    Function UpdateWidthAncestors: Updates parent (summary) tasks with delta widths added to the children.
+
+    Parameters:
+    pTasks [list of dictionaries]: List of tasks.
+    pIdx [integer]: Sequence number of task in list pTasks.
+    pDeltaWidth [float]: width to be added to child and parents.
+    """
+
     # print(pTasks[pIdx]['name'], pTasks[pIdx]['width'])
 
     pTasks[pIdx]['width'] = pTasks[pIdx]['width'] + pDeltaWidth
     vParentIdx = pTasks[pIdx]['parent']
     if (vParentIdx >= 0):
-        UpdateWidthPredecessors(pTasks, vParentIdx, pDeltaWidth)
+        UpdateWidthAncestors(pTasks, vParentIdx, pDeltaWidth)
 
 def BuildBlockSchedule(pProjectStart, pTasks):
+    """
+    Function BuildBlockSchedule: Defines top, left, height and width values for the rectangles (blocks) that represent the (summary) tasks.
+
+    Parameters:
+    pProjectStart [date]: Starting date of the project.
+    pTasks [list of dictionaries]: List of tasks.
+
+    Return values:
+    pTasks [list of dictionaries]: Updated list of tasks.
+    vMaxWidth [float]: Maximum width of the top summary task of the project.
+    """
+
     vMinBlockWidth = 20
     vOffset = 5
 
@@ -167,7 +240,7 @@ def BuildBlockSchedule(pProjectStart, pTasks):
         vTimeDifference2 = vTask['finishdate'] - vTask['startdate']
 
         pTasks[vIdx]['top'] = vTimeDifference1.days + vLevel*vOffset
-        pTasks[vIdx]['height'] = (vTimeDifference2.days + 1) - vLevel*2*vOffset # NOTE: This can lead to height < 0 !!!
+        pTasks[vIdx]['height'] = vTimeDifference2.days - vLevel*2*vOffset # NOTE: This can lead to height < 0 !!!
 
     # Search root where parent = -1
     vRoot = -1
@@ -180,14 +253,14 @@ def BuildBlockSchedule(pProjectStart, pTasks):
 
     # Loop through tree to set width values
     pTasks[vRoot]['width'] = 1000.0
-    SetWidthSuccesors(pTasks, vRoot, vOffset)
+    SetWidthDescendants(pTasks, vRoot, vOffset)
 
     # Loop through tree to update width values based on minimum width
     for vIdx, vTask in enumerate(pTasks):
         vWidth = vTask['width']
         if (vWidth < vMinBlockWidth):
             vDeltaWidth = vMinBlockWidth - vWidth
-            UpdateWidthPredecessors(pTasks, vIdx, vDeltaWidth)
+            UpdateWidthAncestors(pTasks, vIdx, vDeltaWidth)
 
     # Get the maximum width
     vMaxWidth = 0
@@ -202,6 +275,16 @@ def BuildBlockSchedule(pProjectStart, pTasks):
     return pTasks, vMaxWidth
 
 def FilterMilestones(pMilestones):
+    """
+    Function FilterMilestones: Concatenates milestones with identical milestone dates.
+
+    Parameters:
+    pMilestones [list of dictionaries]: List of milestones.
+
+    Return values:
+    pMilestones [list of dictionaries]: Updated list of milestones.
+    """
+
     vDelete = []
     vIdx1 = 0
     while (vIdx1 < len(pMilestones)):
@@ -228,29 +311,43 @@ def FilterMilestones(pMilestones):
     return pMilestones
 
 def WriteSVG(pFileName, pProjectStart, pProjectFinish, pMaxWidth, pMilestones, pTasks):
-    pFileName = pFileName + '.svg'
+    """
+    Function WriteSVG: Writes the schedule in scaleable vector graphics format.
+
+    Parameters:
+    pFilename [string]: Name of the original MS Project file.
+    pProjectStart [date]: Starting date of the project.
+    pProjectFinsh [date]: Finish date of the project.
+    pMaxWidth [float]: Maximum width of the top summary task of the project.
+    pMilestones [list of dictionaries]: List of milestones.
+    pTasks [list of dictionaries]: List of tasks.
+    """
+
     vOffset = 5
     vMin = 0
 
-    vDwg = SVG.Drawing(pFileName, profile='tiny')
+    vDwg = SVG.Drawing(pFileName+ '.svg', profile='tiny')
 
-    # Tasks
+    # Define colours
     vFillColours = [('#ffffff', '#cccccc'),('#ffaaaa', '#ffd5d5')]
     vStrokeColours = [('#000000', '#000000'),('#ff0000', '#ff0000')]
 
+    # Tasks
     for vTask in pTasks:
-        # Define colours
+        # Colours for non-critical tasks
         vFillColours2 = vFillColours[0]
         vStrokeColours2 = vStrokeColours[0]
         if((vTask['critical']) and (len(vTask['children']) == 0)):
+            # Colours for critical tasks
             vFillColours2 = vFillColours[1]
             vStrokeColours2 = vStrokeColours[1]
 
+        # Colour for odd levels
         vFillColour = vFillColours2[0]
         vStrokeColour = vStrokeColours2[0]
         vLevel = len(vTask['outlinenumber'].split('.'))
         if(vLevel%2 == 0):
-            # Even levels
+            # Colour for Even levels
             vFillColour = vFillColours2[1]
             vStrokeColour = vStrokeColours2[1]
 
@@ -289,6 +386,7 @@ def WriteSVG(pFileName, pProjectStart, pProjectFinish, pMaxWidth, pMilestones, p
                 vText.rotate(vRotate, center=(vTextLeft, vTextTop))
                 vGroup.add(vText)
         else:
+            # Fall-back scenario in case of very small sized tasks
             vCircle = vDwg.circle(center=(vLeft, vTop), r=vOffset, fill=vFillColour, stroke=vStrokeColour, stroke_width=2)
             vGroup.add(vCircle)
 
